@@ -1,8 +1,7 @@
 SHELL := /bin/bash
 .ONESHELL:
 
-# TAG = $$(git rev-parse --short HEAD)
-TAG = dev
+TAG = $$(git rev-parse --short HEAD)
 IMG ?= ghcr.io/xenitab/acr-proxy:$(TAG)
 TEST_ENV_FILE = .tmp/env
 
