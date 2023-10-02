@@ -50,6 +50,18 @@ terraform-up:
 	terraform init
 	terraform apply -auto-approve -var-file="../.tmp/lab.tfvars"
 
+.PHONY: terraform-up-customerapptest
+terraform-up-customerapptest:
+	cd test/client-app
+	terraform init
+	terraform apply -auto-approve -var-file="../../.tmp/customerapptest.tfvars"
+
+.PHONY: terraform-down-customerapptest
+terraform-down-customerapptest:
+	cd test/client-app
+	terraform init
+	terraform destroy -auto-approve -var-file="../../.tmp/customerapptest.tfvars"
+
 .PHONY: run
 run:
 	go run ./... \

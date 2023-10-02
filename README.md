@@ -37,6 +37,34 @@ acr_proxy_version  = "xyz"
 
 Deploy it using: `make terraform-up`
 
+## Testing that it works
+
+NOTE: Before running this, make sure you have configured `acr-proxy` to allow the tenant id for which environment you will deploy below. See the terraform variable `allowed_tenant_ids`.
+
+Before you can test it, you need to create `.tmp/customerapptest.tfvars` with the following content:
+
+```terraform
+azurerm_container_app_environment_name = "me-lab-we-acrproxy"
+resource_group_name                    = "rg-lab-we-acrproxy"
+acr_proxy_fqdn                         = "acr-proxy.[something].[region].azurecontainerapps.io"
+image                                  = "nginx:latest"
+```
+
+Then push nginx to your ACR:
+
+```
+az acr login --name [acr_name]
+docker pull nginx:latest
+docker tag nginx:latest [acr_name].azurecr.io/nginx:latest
+docker push [acr_name].azurecr.io/nginx:latest
+```
+
+Then deploy it: `make terraform-up-customerapptest`
+
+If it succeeds, then everything should be working. Verify that you can see the nginx logs.
+
+Then destroy the test: `make terraform-down-customerapptest`
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
