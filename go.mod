@@ -8,7 +8,7 @@ require (
 	github.com/samber/slog-gin v1.1.0
 	github.com/stretchr/testify v1.8.3
 	github.com/xenitab/go-oidc-middleware v0.0.43
-	golang.org/x/sync v0.3.0
+	golang.org/x/sync v0.4.0
 )
 
 require (
