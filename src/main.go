@@ -169,7 +169,7 @@ type config struct {
 	AzureContainerRegistryUser     string   `json:"azure_container_registry_user" arg:"--azure-container-registry-user,env:AZURE_CONTAINER_REGISTRY_USER,required" help:"The user for the Azure Container Registry that should be proxied."`
 	AzureContainerRegistryPassword string   `json:"azure_container_registry_password" arg:"--azure-container-registry-password,env:AZURE_CONTAINER_REGISTRY_PASSWORD,required" help:"The password for the Azure Container Registry that should be proxied."`
 	AllowedAzureTenantIDs          []string `json:"allowed_azure_tenant_ids" arg:"--allowed-azure-tenant-ids,env:ALLOWED_AZURE_TENANT_IDS,required" help:"A list of the allowed Azure tenant ids that can use the proxy."`
-	AllowedCognitoIssuers          []string `json:"allowed_cognito_issuers" arg:"--allowed-cognito-issuers,env:ALLOWED_COGNITO_ISSUERS,required" help:"A list of the allowed AWS Cognito issuers that can use the proxy."`
+	AllowedCognitoIssuers          []string `json:"allowed_cognito_issuers" arg:"--allowed-cognito-issuers,env:ALLOWED_COGNITO_ISSUERS" help:"A list of the allowed AWS Cognito issuers that can use the proxy."`
 
 	azureIssuer          string
 	azureAudience        string

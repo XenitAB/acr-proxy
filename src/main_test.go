@@ -231,7 +231,7 @@ func TestNewConfig(t *testing.T) {
 		"AZURE_CONTAINER_REGISTRY_NAME",
 		"AZURE_CONTAINER_REGISTRY_USER",
 		"AZURE_CONTAINER_REGISTRY_PASSWORD",
-		"ALLOWED_TENANT_IDS",
+		"ALLOWED_AZURE_TENANT_IDS",
 	}
 
 	for _, envVar := range envVarsToClear {
@@ -241,7 +241,7 @@ func TestNewConfig(t *testing.T) {
 
 	args := []string{
 		"/foo/bar/bin",
-		"--allowed-tenant-ids",
+		"--allowed-azure-tenant-ids",
 		"ze-tenant-id-1",
 		"ze-tenant-id-2",
 		"--azure-container-registry-name",
@@ -262,11 +262,12 @@ func TestNewConfig(t *testing.T) {
 		AzureContainerRegistryPassword: "ze-password",
 		AllowedAzureTenantIDs:          []string{"ze-tenant-id-1", "ze-tenant-id-2"},
 
-		azureIssuer:       "https://sts.windows.net/common",
-		azureAudience:     "https://management.azure.com",
-		azureTokenType:    "JWT",
-		registryURL:       "https://ze-registry-name.azurecr.io",
-		azureValidationFn: nil,
+		azureIssuer:          "https://sts.windows.net/common",
+		azureAudience:        "https://management.azure.com",
+		azureTokenType:       "JWT",
+		azureValidationFn:    nil,
+		cognitoRequiredScope: "registry-credentials/regcred",
+		registryURL:          "https://ze-registry-name.azurecr.io",
 	}, cfg)
 }
 
