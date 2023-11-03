@@ -40,15 +40,15 @@ func TestDefault(t *testing.T) {
 
 	port := testAvailableTCPPort(t)
 	cfg := config{
-		issuer:    op.GetURL(t),
-		audience:  "ze-audience",
-		tokenType: "JWT",
-		validationFn: func(c *claims) error {
+		azureIssuer:    op.GetURL(t),
+		azureAudience:  "ze-audience",
+		azureTokenType: "JWT",
+		azureValidationFn: func(c *azureClaims) error {
 			return nil
 		},
 		AzureContainerRegistryUser:     "ze-user",
 		AzureContainerRegistryPassword: "ze-pass",
-		AllowedTenantIDs:               []string{"ze-tenant-id"},
+		AllowedAzureTenantIDs:          []string{"ze-tenant-id"},
 		Address:                        fmt.Sprintf(":%d", port),
 	}
 
@@ -176,9 +176,9 @@ func TestDefault(t *testing.T) {
 }
 
 func TestClaimsValidationFn(t *testing.T) {
-	fn := newClaimsValidationFn([]string{"ze-tenant-1", "ze-tenant-2", "ze-tenant-3"})
+	fn := newAzureClaimsValidationFn([]string{"ze-tenant-1", "ze-tenant-2", "ze-tenant-3"})
 	t.Run("first tenant", func(t *testing.T) {
-		err := fn(&claims{
+		err := fn(&azureClaims{
 			Issuer:   "https://sts.windows.net/ze-tenant-1/",
 			TenantId: "ze-tenant-1",
 		})
@@ -186,7 +186,7 @@ func TestClaimsValidationFn(t *testing.T) {
 	})
 
 	t.Run("second tenant", func(t *testing.T) {
-		err := fn(&claims{
+		err := fn(&azureClaims{
 			Issuer:   "https://sts.windows.net/ze-tenant-2/",
 			TenantId: "ze-tenant-2",
 		})
@@ -194,7 +194,7 @@ func TestClaimsValidationFn(t *testing.T) {
 	})
 
 	t.Run("third tenant", func(t *testing.T) {
-		err := fn(&claims{
+		err := fn(&azureClaims{
 			Issuer:   "https://sts.windows.net/ze-tenant-3/",
 			TenantId: "ze-tenant-3",
 		})
@@ -202,14 +202,14 @@ func TestClaimsValidationFn(t *testing.T) {
 	})
 
 	t.Run("issuer needs to start with https://sts.windows.net/", func(t *testing.T) {
-		err := fn(&claims{
+		err := fn(&azureClaims{
 			Issuer: "ze-invalid-issuer",
 		})
 		require.ErrorContains(t, err, "issuer needs to start with https://sts.windows.net/, but received: ze-invalid-issuer")
 	})
 
 	t.Run("tenant from issuer and tid not matching", func(t *testing.T) {
-		err := fn(&claims{
+		err := fn(&azureClaims{
 			Issuer:   "https://sts.windows.net/ze-invalid-tenant-1/",
 			TenantId: "ze-invalid-tenant-2",
 		})
@@ -217,7 +217,7 @@ func TestClaimsValidationFn(t *testing.T) {
 	})
 
 	t.Run("tenant not trusted", func(t *testing.T) {
-		err := fn(&claims{
+		err := fn(&azureClaims{
 			Issuer:   "https://sts.windows.net/ze-invalid-tenant/",
 			TenantId: "ze-invalid-tenant",
 		})
@@ -254,19 +254,19 @@ func TestNewConfig(t *testing.T) {
 	cfg, err := newConfig(args[1:])
 	require.NoError(t, err)
 
-	cfg.validationFn = nil
+	cfg.azureValidationFn = nil
 	require.Equal(t, config{
 		Address:                        ":8080",
 		AzureContainerRegistryName:     "ze-registry-name",
 		AzureContainerRegistryUser:     "ze-user",
 		AzureContainerRegistryPassword: "ze-password",
-		AllowedTenantIDs:               []string{"ze-tenant-id-1", "ze-tenant-id-2"},
+		AllowedAzureTenantIDs:          []string{"ze-tenant-id-1", "ze-tenant-id-2"},
 
-		issuer:       "https://sts.windows.net/common",
-		audience:     "https://management.azure.com",
-		tokenType:    "JWT",
-		registryURL:  "https://ze-registry-name.azurecr.io",
-		validationFn: nil,
+		azureIssuer:       "https://sts.windows.net/common",
+		azureAudience:     "https://management.azure.com",
+		azureTokenType:    "JWT",
+		registryURL:       "https://ze-registry-name.azurecr.io",
+		azureValidationFn: nil,
 	}, cfg)
 }
 

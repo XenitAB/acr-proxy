@@ -43,13 +43,7 @@ func run(ctx context.Context, cfg config) error {
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	oidcTokenHandler, err := oidctoken.New(
-		cfg.validationFn,
-		options.WithRequiredTokenType(cfg.tokenType),
-		options.WithIssuer(cfg.issuer),
-		options.WithRequiredAudience(cfg.audience),
-		options.WithDisableIssuerValidation(),
-	)
+	tokenValidatorFn, err := newTokenValidator(cfg)
 	if err != nil {
 		return err
 	}
@@ -134,7 +128,7 @@ func run(ctx context.Context, cfg config) error {
 			return
 		}
 
-		_, err = oidcTokenHandler.ParseToken(c.Request.Context(), token)
+		err = tokenValidatorFn(c.Request.Context(), token)
 		if err != nil {
 			//nolint:errcheck // ignore
 			c.AbortWithError(http.StatusForbidden, fmt.Errorf("unable to validate the token: %v", err))
@@ -174,20 +168,23 @@ type config struct {
 	AzureContainerRegistryName     string   `json:"azure_container_registry_name" arg:"--azure-container-registry-name,env:AZURE_CONTAINER_REGISTRY_NAME,required" help:"The name of the Azure Container Registry that should be proxied."`
 	AzureContainerRegistryUser     string   `json:"azure_container_registry_user" arg:"--azure-container-registry-user,env:AZURE_CONTAINER_REGISTRY_USER,required" help:"The user for the Azure Container Registry that should be proxied."`
 	AzureContainerRegistryPassword string   `json:"azure_container_registry_password" arg:"--azure-container-registry-password,env:AZURE_CONTAINER_REGISTRY_PASSWORD,required" help:"The password for the Azure Container Registry that should be proxied."`
-	AllowedTenantIDs               []string `json:"allowed_tenant_ids" arg:"--allowed-tenant-ids,env:ALLOWED_TENANT_IDS,required" help:"A list of the allowed tenant ids that can use the proxy."`
+	AllowedAzureTenantIDs          []string `json:"allowed_azure_tenant_ids" arg:"--allowed-azure-tenant-ids,env:ALLOWED_AZURE_TENANT_IDS,required" help:"A list of the allowed Azure tenant ids that can use the proxy."`
+	AllowedCognitoIssuers          []string `json:"allowed_cognito_issuers" arg:"--allowed-cognito-issuers,env:ALLOWED_COGNITO_ISSUERS,required" help:"A list of the allowed AWS Cognito issuers that can use the proxy."`
 
-	issuer       string
-	audience     string
-	tokenType    string
-	registryURL  string
-	validationFn options.ClaimsValidationFn[claims]
+	azureIssuer          string
+	azureAudience        string
+	azureTokenType       string
+	azureValidationFn    options.ClaimsValidationFn[azureClaims]
+	cognitoRequiredScope string
+	registryURL          string
 }
 
 func newConfig(args []string) (config, error) {
 	cfg := config{
-		tokenType: "JWT",
-		issuer:    "https://sts.windows.net/common",
-		audience:  "https://management.azure.com",
+		azureTokenType:       "JWT",
+		azureIssuer:          "https://sts.windows.net/common",
+		azureAudience:        "https://management.azure.com",
+		cognitoRequiredScope: "registry-credentials/regcred",
 	}
 
 	parser, err := arg.NewParser(arg.Config{
@@ -204,12 +201,12 @@ func newConfig(args []string) (config, error) {
 	}
 
 	cfg.registryURL = fmt.Sprintf("https://%s.azurecr.io", cfg.AzureContainerRegistryName)
-	cfg.validationFn = newClaimsValidationFn(cfg.AllowedTenantIDs)
+	cfg.azureValidationFn = newAzureClaimsValidationFn(cfg.AllowedAzureTenantIDs)
 
 	return cfg, nil
 }
 
-type claims struct {
+type azureClaims struct {
 	Aio                                 string    `json:"aio"`
 	ApplicationID                       string    `json:"appid"`
 	ApplicationIDACR                    string    `json:"appidacr"`
@@ -229,8 +226,8 @@ type claims struct {
 	Uti                                 string    `json:"uti"`
 }
 
-func newClaimsValidationFn(allowedTenantIDs []string) options.ClaimsValidationFn[claims] {
-	return func(c *claims) error {
+func newAzureClaimsValidationFn(allowedTenantIDs []string) options.ClaimsValidationFn[azureClaims] {
+	return func(c *azureClaims) error {
 		if !strings.HasPrefix(c.Issuer, "https://sts.windows.net/") {
 			return fmt.Errorf("issuer needs to start with https://sts.windows.net/, but received: %s", c.Issuer)
 		}
@@ -247,4 +244,76 @@ func newClaimsValidationFn(allowedTenantIDs []string) options.ClaimsValidationFn
 
 		return nil
 	}
+}
+
+type cognitoClaims struct {
+	Subject   string    `json:"sub"`
+	TokenUse  string    `json:"token_use"`
+	Scope     string    `json:"scope"`
+	AuthTime  time.Time `json:"auth_time"`
+	Issuer    string    `json:"iss"`
+	ExpiresAt time.Time `json:"exp"`
+	IssuedAt  time.Time `json:"iat"`
+	Version   int       `json:"version"`
+	Jti       string    `json:"jti"`
+	ClientID  string    `json:"client_id"`
+}
+
+func newCognitoClaimsValidationFn(requiredScope string) options.ClaimsValidationFn[cognitoClaims] {
+	return func(c *cognitoClaims) error {
+		if c.TokenUse != "access" {
+			return fmt.Errorf("expected token_use to be access but received: %s", c.TokenUse)
+		}
+
+		if c.Scope != requiredScope {
+			return fmt.Errorf("expected scope to be %s but received: %s", requiredScope, c.Scope)
+		}
+
+		return nil
+	}
+}
+
+type tokenValidator func(ctx context.Context, tokenString string) error
+
+func newTokenValidator(cfg config) (tokenValidator, error) {
+	azureTenantValidator, err := oidctoken.New(
+		cfg.azureValidationFn,
+		options.WithRequiredTokenType(cfg.azureTokenType),
+		options.WithIssuer(cfg.azureIssuer),
+		options.WithRequiredAudience(cfg.azureAudience),
+		options.WithDisableIssuerValidation(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	cognitoValidators := []*oidctoken.TokenHandler[cognitoClaims]{}
+	for _, issuer := range cfg.AllowedCognitoIssuers {
+		cognitoValidator, err := oidctoken.New(
+			newCognitoClaimsValidationFn(cfg.cognitoRequiredScope),
+			options.WithIssuer(issuer),
+		)
+		if err != nil {
+			return nil, err
+		}
+		cognitoValidators = append(cognitoValidators, cognitoValidator)
+	}
+
+	validatorFn := func(ctx context.Context, tokenString string) error {
+		_, err := azureTenantValidator.ParseToken(ctx, tokenString)
+		if err == nil {
+			return nil
+		}
+
+		for _, validator := range cognitoValidators {
+			_, err := validator.ParseToken(ctx, tokenString)
+			if err == nil {
+				return nil
+			}
+		}
+
+		return fmt.Errorf("unable to validate the token: %v", err)
+	}
+
+	return validatorFn, fmt.Errorf("foobar")
 }
