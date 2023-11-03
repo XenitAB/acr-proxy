@@ -288,6 +288,8 @@ func testAvailableTCPPort(t *testing.T) int {
 }
 
 func testWaitForTCPPort(t *testing.T, port int) {
+	t.Helper()
+
 	for i := 0; i < 10; i++ {
 		_, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 10*time.Millisecond)
 		if err == nil {

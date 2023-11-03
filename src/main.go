@@ -315,5 +315,5 @@ func newTokenValidator(cfg config) (tokenValidator, error) {
 		return fmt.Errorf("unable to validate the token: %v", err)
 	}
 
-	return validatorFn, fmt.Errorf("foobar")
+	return validatorFn, nil
 }
