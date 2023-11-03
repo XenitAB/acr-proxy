@@ -18,37 +18,27 @@ import (
 )
 
 func TestDefault(t *testing.T) {
-	testUsers := map[string]optest.TestUser{
-		"test": {
-			Audience:           "ze-audience",
-			Subject:            "test",
-			Name:               "Test Testersson",
-			GivenName:          "Test",
-			FamilyName:         "Testersson",
-			Locale:             "en-US",
-			Email:              "test@testersson.com",
-			AccessTokenKeyType: "JWT",
-			IdTokenKeyType:     "JWT",
-			ExtraAccessTokenClaims: map[string]interface{}{
-				"tid": "ze-tenant-id",
-			},
-		},
-	}
+	azureOp, cognitoOps, closeFn := testCreateProviders(t)
+	defer closeFn(t)
 
-	op := optest.NewTesting(t, optest.WithTestUsers(testUsers), optest.WithDefaultTestUser("test"))
-	defer op.Close(t)
+	cognitoIssuers := []string{}
+	for _, cognitoOp := range cognitoOps {
+		cognitoIssuers = append(cognitoIssuers, cognitoOp.GetURL(t))
+	}
 
 	port := testAvailableTCPPort(t)
 	cfg := config{
-		azureIssuer:    op.GetURL(t),
+		azureIssuer:    azureOp.GetURL(t),
 		azureAudience:  "ze-audience",
 		azureTokenType: "JWT",
 		azureValidationFn: func(c *azureClaims) error {
 			return nil
 		},
+		cognitoRequiredScope:           "registry-credentials/regcred",
 		AzureContainerRegistryUser:     "ze-user",
 		AzureContainerRegistryPassword: "ze-pass",
 		AllowedAzureTenantIDs:          []string{"ze-tenant-id"},
+		AllowedCognitoIssuers:          cognitoIssuers,
 		Address:                        fmt.Sprintf(":%d", port),
 	}
 
@@ -170,12 +160,34 @@ func TestDefault(t *testing.T) {
 		require.Equal(t, http.StatusForbidden, res.StatusCode)
 	})
 
+	t.Run("GET /v2/foobar azure token", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/v2/foobar", port), http.NoBody)
+		require.NoError(t, err)
+		req.SetBasicAuth("will-be-ignored", azureOp.GetToken(t).AccessToken)
+
+		res, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, res.StatusCode)
+	})
+
+	t.Run("GET /v2/foobar cognito token", func(t *testing.T) {
+		for _, cognitoOp := range cognitoOps {
+			req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/v2/foobar", port), http.NoBody)
+			require.NoError(t, err)
+			req.SetBasicAuth("will-be-ignored", cognitoOp.GetToken(t).AccessToken)
+
+			res, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, res.StatusCode)
+		}
+	})
+
 	cancel()
 	err := g.Wait()
 	require.NoError(t, err)
 }
 
-func TestClaimsValidationFn(t *testing.T) {
+func TestAzureClaimsValidationFn(t *testing.T) {
 	fn := newAzureClaimsValidationFn([]string{"ze-tenant-1", "ze-tenant-2", "ze-tenant-3"})
 	t.Run("first tenant", func(t *testing.T) {
 		err := fn(&azureClaims{
@@ -225,6 +237,33 @@ func TestClaimsValidationFn(t *testing.T) {
 	})
 }
 
+func TestCognitoClaimsValidationFn(t *testing.T) {
+	fn := newCognitoClaimsValidationFn("ze-scope")
+	t.Run("working", func(t *testing.T) {
+		err := fn(&cognitoClaims{
+			TokenUse: "access",
+			Scope:    "ze-scope",
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("wrong token_use", func(t *testing.T) {
+		err := fn(&cognitoClaims{
+			TokenUse: "foo",
+			Scope:    "ze-scope",
+		})
+		require.EqualError(t, err, "expected token_use to be access but received: foo")
+	})
+
+	t.Run("wrong scope", func(t *testing.T) {
+		err := fn(&cognitoClaims{
+			TokenUse: "access",
+			Scope:    "ze-wrong-scope",
+		})
+		require.EqualError(t, err, "expected scope to be ze-scope but received: ze-wrong-scope")
+	})
+}
+
 func TestNewConfig(t *testing.T) {
 	envVarsToClear := []string{
 		"ADDRESS",
@@ -232,6 +271,7 @@ func TestNewConfig(t *testing.T) {
 		"AZURE_CONTAINER_REGISTRY_USER",
 		"AZURE_CONTAINER_REGISTRY_PASSWORD",
 		"ALLOWED_AZURE_TENANT_IDS",
+		"ALLOWED_COGNITO_ISSUERS",
 	}
 
 	for _, envVar := range envVarsToClear {
@@ -307,4 +347,60 @@ func testTempUnsetEnv(t *testing.T, key string) func() {
 	oldEnv := os.Getenv(key)
 	os.Unsetenv(key)
 	return func() { os.Setenv(key, oldEnv) }
+}
+
+func testCreateProviders(t *testing.T) (*optest.OPTesting, []*optest.OPTesting, func(t *testing.T)) {
+	t.Helper()
+
+	azureTestUser := map[string]optest.TestUser{
+		"test": {
+			Audience:           "ze-audience",
+			Subject:            "test",
+			Name:               "Test Testersson",
+			GivenName:          "Test",
+			FamilyName:         "Testersson",
+			Locale:             "en-US",
+			Email:              "test@testersson.com",
+			AccessTokenKeyType: "JWT",
+			IdTokenKeyType:     "JWT",
+			ExtraAccessTokenClaims: map[string]interface{}{
+				"tid": "ze-tenant-id",
+			},
+		},
+	}
+
+	azureOp := optest.NewTesting(t, optest.WithTestUsers(azureTestUser), optest.WithDefaultTestUser("test"))
+
+	cognitoTestUser := map[string]optest.TestUser{
+		"test": {
+			Audience:           "ze-audience",
+			Subject:            "test",
+			Name:               "Test Testersson",
+			GivenName:          "Test",
+			FamilyName:         "Testersson",
+			Locale:             "en-US",
+			Email:              "test@testersson.com",
+			AccessTokenKeyType: "JWT",
+			IdTokenKeyType:     "JWT",
+			ExtraAccessTokenClaims: map[string]interface{}{
+				"token_use": "access",
+				"scope":     "registry-credentials/regcred",
+			},
+		},
+	}
+
+	cognitoOps := []*optest.OPTesting{}
+	for i := 0; i < 3; i++ {
+		cognitoOp := optest.NewTesting(t, optest.WithTestUsers(cognitoTestUser), optest.WithDefaultTestUser("test"))
+		cognitoOps = append(cognitoOps, cognitoOp)
+	}
+
+	closeFn := func(t *testing.T) {
+		azureOp.Close(t)
+		for _, cognitoOp := range cognitoOps {
+			cognitoOp.Close(t)
+		}
+	}
+
+	return azureOp, cognitoOps, closeFn
 }
