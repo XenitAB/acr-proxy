@@ -136,9 +136,14 @@ func run(ctx context.Context, cfg config) error {
 
 		_, err = oidcTokenHandler.ParseToken(c.Request.Context(), token)
 		if err != nil {
-			//nolint:errcheck // ignore
-			c.AbortWithError(http.StatusForbidden, fmt.Errorf("unable to validate the token: %v", err))
-			return
+			switch {
+			case cfg.StaticSecret != "" && token == cfg.StaticSecret:
+				// do nothing, valid static secret
+			default:
+				//nolint:errcheck // ignore
+				c.AbortWithError(http.StatusForbidden, fmt.Errorf("unable to validate the token: %v", err))
+				return
+			}
 		}
 
 		rp.ServeHTTP(c.Writer, c.Request)
@@ -175,6 +180,7 @@ type config struct {
 	AzureContainerRegistryUser     string   `json:"azure_container_registry_user" arg:"--azure-container-registry-user,env:AZURE_CONTAINER_REGISTRY_USER,required" help:"The user for the Azure Container Registry that should be proxied."`
 	AzureContainerRegistryPassword string   `json:"azure_container_registry_password" arg:"--azure-container-registry-password,env:AZURE_CONTAINER_REGISTRY_PASSWORD,required" help:"The password for the Azure Container Registry that should be proxied."`
 	AllowedTenantIDs               []string `json:"allowed_tenant_ids" arg:"--allowed-tenant-ids,env:ALLOWED_TENANT_IDS,required" help:"A list of the allowed tenant ids that can use the proxy."`
+	StaticSecret                   string   `json:"static_secret" arg:"--static-secret,env:STATIC_SECRET" help:"A static secret, that if set, can be used instead of token authentication."`
 
 	issuer       string
 	audience     string

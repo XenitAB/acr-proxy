@@ -49,6 +49,7 @@ func TestDefault(t *testing.T) {
 		AzureContainerRegistryUser:     "ze-user",
 		AzureContainerRegistryPassword: "ze-pass",
 		AllowedTenantIDs:               []string{"ze-tenant-id"},
+		StaticSecret:                   "ze-static-secret",
 		Address:                        fmt.Sprintf(":%d", port),
 	}
 
@@ -168,6 +169,26 @@ func TestDefault(t *testing.T) {
 		res, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusForbidden, res.StatusCode)
+	})
+
+	t.Run("GET /v2/foobar valid token", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/v2/foobar", port), http.NoBody)
+		require.NoError(t, err)
+		req.SetBasicAuth("will-be-ignored", op.GetToken(t).AccessToken)
+
+		res, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, res.StatusCode)
+	})
+
+	t.Run("GET /v2/foobar valid static secret", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/v2/foobar", port), http.NoBody)
+		require.NoError(t, err)
+		req.SetBasicAuth("will-be-ignored", "ze-static-secret")
+
+		res, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, res.StatusCode)
 	})
 
 	cancel()
