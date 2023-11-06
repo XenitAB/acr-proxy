@@ -113,6 +113,27 @@ func run(ctx context.Context, cfg config) error {
 		r.URL.Scheme = registryURL.Scheme
 	}
 
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			MaxIdleConns:    20,
+			MaxConnsPerHost: 20,
+		},
+	}
+	rp.ModifyResponse = func(res *http.Response) error {
+		user, _, ok := res.Request.BasicAuth()
+		if !ok {
+			return nil
+		}
+
+		if !strings.HasPrefix(user, "fargate") {
+			return nil
+		}
+
+		// NOTE: Fargate doesn't support redirects, so we need to rewrite the request.
+		//       This is a really ugly hack, but it works for now.
+		return rewriteFargateRequest(httpClient, res)
+	}
+
 	v2 := r.Group("/v2")
 	v2.HEAD("*path", func(c *gin.Context) {
 		c.Status(http.StatusOK)
@@ -121,7 +142,7 @@ func run(ctx context.Context, cfg config) error {
 		if c.Request.URL.Path == "/v2" || c.Request.URL.Path == "/v2/" {
 			c.Writer.Header().Set("Www-Authenticate", fmt.Sprintf(`Basic realm="https://%s", service="%s"`, c.Request.Host, c.Request.Host))
 			c.Writer.Header().Set("Docker-Distribution-Api-Version", "registry/2.0")
-			c.Status(http.StatusUnauthorized)
+			c.JSON(http.StatusUnauthorized, generateDistributionError("UNAUTHORIZED", "authentication required"))
 			return
 		}
 
@@ -129,8 +150,7 @@ func run(ctx context.Context, cfg config) error {
 		if !ok || token == "" {
 			c.Writer.Header().Set("Www-Authenticate", fmt.Sprintf(`Basic realm="https://%s", service="%s"`, c.Request.Host, c.Request.Host))
 			c.Writer.Header().Set("Docker-Distribution-Api-Version", "registry/2.0")
-			//nolint:errcheck // ignore
-			c.AbortWithError(http.StatusUnauthorized, fmt.Errorf("unable to extract token from basic auth"))
+			c.JSON(http.StatusUnauthorized, generateDistributionError("UNAUTHORIZED", "authentication required"))
 			return
 		}
 
@@ -172,6 +192,52 @@ func run(ctx context.Context, cfg config) error {
 	})
 
 	return g.Wait()
+}
+
+// rewriteFargateRequest rewrites the request to follow the redirect
+func rewriteFargateRequest(httpClient *http.Client, res *http.Response) error {
+	if res.StatusCode != http.StatusTemporaryRedirect {
+		return nil
+	}
+
+	location := res.Header.Get("Location")
+	if location == "" {
+		return nil
+	}
+
+	locationURL, err := url.Parse(location)
+	if err != nil {
+		return nil
+	}
+
+	req, err := http.NewRequestWithContext(res.Request.Context(), http.MethodGet, locationURL.String(), http.NoBody)
+	if err != nil {
+		return nil
+	}
+
+	newRes, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil
+	}
+
+	res.Header = newRes.Header
+	res.StatusCode = newRes.StatusCode
+	res.Status = newRes.Status
+	res.ContentLength = newRes.ContentLength
+	res.Body = newRes.Body
+
+	return nil
+}
+
+func generateDistributionError(code string, message string) gin.H {
+	return gin.H{
+		"errors": []gin.H{
+			{
+				"code":    code,
+				"message": message,
+			},
+		},
+	}
 }
 
 type config struct {

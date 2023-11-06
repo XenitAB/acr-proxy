@@ -59,6 +59,11 @@ resource "azurerm_container_registry" "this" {
   admin_enabled       = true
 }
 
+resource "random_password" "acr_proxy_static_secret" {
+  length  = 32
+  special = false
+}
+
 resource "azurerm_container_app" "this" {
   name                         = "acr-proxy"
   container_app_environment_id = azurerm_container_app_environment.this.id
@@ -109,6 +114,11 @@ resource "azurerm_container_app" "this" {
         name        = "AZURE_CONTAINER_REGISTRY_PASSWORD"
         secret_name = "container-registry-password"
       }
+
+      env {
+        name        = "STATIC_SECRET"
+        secret_name = "static-secret"
+      }
     }
   }
 
@@ -124,6 +134,11 @@ resource "azurerm_container_app" "this" {
   secret {
     name  = "container-registry-password"
     value = azurerm_container_registry.this.admin_password
+  }
+
+  secret {
+    name  = "static-secret"
+    value = random_password.acr_proxy_static_secret.result
   }
 
   registry {
