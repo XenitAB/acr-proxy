@@ -5,7 +5,7 @@ go 1.21.0
 require (
 	github.com/alexflint/go-arg v1.4.3
 	github.com/gin-gonic/gin v1.9.1
-	github.com/samber/slog-gin v1.6.0
+	github.com/samber/slog-gin v1.7.0
 	github.com/stretchr/testify v1.8.4
 	github.com/xenitab/go-oidc-middleware v0.0.43
 	golang.org/x/sync v0.4.0
