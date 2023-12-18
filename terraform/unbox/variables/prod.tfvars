@@ -13,3 +13,4 @@ allowed_tenant_ids = [
   "a97f5891-d113-4d40-a492-9999be8edec6", # 063
 ]
 acr_proxy_version = "v0.0.4"
+subscription_id = "fa3d92ff-c90c-4898-bec5-27f51d500e16"
