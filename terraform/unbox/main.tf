@@ -18,6 +18,11 @@ locals {
 resource "azurerm_resource_group" "this" {
   name     = "rg-${local.eln}"
   location = var.location
+  lifecycle {
+    ignore_changes = [
+      tags,
+    ]
+  }
 }
 
 resource "azurerm_log_analytics_workspace" "this" {
